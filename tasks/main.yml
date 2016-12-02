@@ -1,0 +1,136 @@
+---
+- name: get sub-package names, versions and directories
+  vars.rb:
+    bind:
+      packages_dir: "{{ substring_packages_dir }}"
+    src: |
+      require 'json'
+      require "digest"
+      
+      packages = {}
+      
+      Dir[
+        File.join(packages_dir, '*', 'package.json')
+      ].each {|package_json_path|
+        dir = File.realpath File.dirname(package_json_path)
+        package_json = JSON.load File.read(package_json_path)
+        name = package_json['name']
+        
+        packages[name] = {
+          'name' => name,
+          'dir' => dir,
+          'version' => package_json['version'],
+        }
+      }
+      
+      {'substring_packages' => packages}
+
+- name: remove node_modules in each sub-package
+  when: substring_clean
+  file:
+    path: "{{ item.value.dir }}/node_modules"
+    state: absent
+  with_dict: "{{ substring_packages }}"
+
+- name: yarn install in each sub-package
+  command: >-
+    yarn install
+    
+    {% if substring_pure %}
+      --pure-lockfile
+    {% endif %}
+    
+    {% if substring_offline %}
+      --offline
+    {% endif %}
+  args:
+    chdir: "{{ item.value.dir }}"
+  with_dict: "{{ substring_packages }}"
+
+- name: yarn run build in each sub-package
+  command: yarn run build
+  args:
+    chdir: "{{ item.value.dir }}"
+  with_dict: "{{ substring_packages }}"
+  
+- name: remove any existing sub-package tarballs
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_fileglob: "{{ substring_packages_dir }}/*.tgz"
+
+- name: npm pack sub-packages
+  # we dont' use yarn because it includes the deps and we just want this 
+  # package's code
+  command: >-
+    npm pack {{ item.value.dir }}
+  args:
+    chdir: "{{ substring_packages_dir }}"
+  with_dict: "{{ substring_packages }}"
+
+- name: update packages with tar path, hash and hashed name
+  vars.rb:
+    bind:
+      packages_dir: "{{ substring_packages_dir }}"
+      packages: "{{ substring_packages }}"
+    src: |
+      require "digest"
+      
+      packages.each {|name, package|
+        tar_filename = [
+          package['name'].gsub('@', '').gsub('/', '-'),
+          package['version']
+        ].join('-') + '.tgz'
+        
+        tar_path = File.join packages_dir, tar_filename
+        
+        tar_hash = Digest::SHA1.file(tar_path).hexdigest
+        
+        tar_hashed_filename =
+          "#{ File.basename(tar_path, '.tgz') }-#{ tar_hash }.tgz"
+        
+        tar_hashed_path = File.join packages_dir, tar_hashed_filename
+        
+        package['tar'] = {
+          'filename' => tar_filename,
+          'path' => tar_path,
+          'hash' => tar_hash,
+          'hashed_filename' => tar_hashed_filename,
+          'hashed_path' => tar_hashed_path,
+        }
+      }
+      
+      {'substring_packages' => packages}
+
+- debug:
+    msg:
+      substring_packages: "{{ substring_packages }}"
+
+- name: rename tarballs
+  command: >-
+    mv
+    {{ item.value.tar.path }}
+    {{ item.value.tar.hashed_path }}
+  with_dict: "{{ substring_packages }}"
+
+- name: >-
+    replace versions in {{ substring_target }}/package.json
+  state:
+    json:
+      key: "{{ substring_target }}/package.json:dependencies:{{ item.key }}"
+      set: "{{ item.value.tar.hashed_path | relpath(substring_target) }}"
+  with_dict: "{{ substring_packages }}"
+
+- name: nuke frontend/node_modules
+  file:
+    path: "{{ substring_target }}/node_modules"
+    state: absent
+
+- name: yarn install in frontend
+  command: >-
+    yarn install
+    {% if substring_offline %}
+      --offline
+    {% endif %}
+  args:
+    chdir: "{{ substring_target }}"

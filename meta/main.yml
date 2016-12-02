@@ -1,0 +1,9 @@
+---
+# meta file for nrser.substring
+
+allow_duplicates: yes
+
+dependencies:
+- role: nrser.rb
+- role: nrser.state_mate
+

@@ -1,0 +1,15 @@
+---
+# defaults file for nrser.substring
+
+substring_target: "{{ qb_dir }}"
+
+substring_packages_dir: "{{ substring_target }}/packages"
+
+# clean (remove node_modules) by default
+substring_clean: false
+
+# run yarn in offline mode
+substring_offline: false
+
+# if true, adds the --pure-lockfile option to `yarn install`
+substring_pure: true

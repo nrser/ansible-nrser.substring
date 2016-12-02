@@ -1,0 +1,111 @@
+#!/usr/bin/env ruby
+# WANT_JSON
+# ^ tell ansible to provide JSON args
+
+require 'json'
+require 'set'
+require 'tsort'
+
+def package_name dir
+  JSON.load(File.read(File.join(dir, 'package.json'))).fetch 'name'
+end
+
+# see http://ruby-doc.org/stdlib-2.1.2/libdoc/tsort/rdoc/TSort.html
+class Graph < Hash
+  include TSort
+  
+  # @param base_dir [String]
+  #   the dir to base relative paths off
+  # 
+  # @param hash [Hash<String, Array<String>>]
+  #   map of string package directories to arrays of string package
+  #   directories that it depends on
+  # 
+  def initialize base_dir, hash
+    @base_dir = base_dir
+    
+    normalized_hash = hash.map {|dir, deps|
+      [normalize(dir), deps.map {|depDir| normalize(depDir)}]
+    }.to_h
+    
+    all_dirs = Set.new(
+      normalized_hash.keys + normalized_hash.values.flatten
+    )
+    
+    all_dirs.each {|dir|
+      self[dir] = if normalized_hash.key? dir
+        normalized_hash[dir]
+      else
+        []
+      end
+    }
+  end
+  
+  # normalize a dir against @base_dir
+  def normalize dir
+    File.realpath(
+      if dir.start_with? '/'
+        dir
+      else
+        File.join @base_dir, dir
+      end
+    )
+  end
+  
+  alias tsort_each_node each_key
+  
+  def tsort_each_child(node, &block)
+    fetch(node).each(&block)
+  end
+  
+  def tsort
+    super.map {|dir| {
+      'dir' => dir,
+      'deps' => self[dir].map {|dep_dir| {
+        'dir' => dep_dir,
+        'name' => package_name(dep_dir),
+      }},
+      'name' => package_name(dir),
+    }}
+  end
+end
+
+def main
+  input = nil
+  args = nil
+  changed = false
+
+  begin
+    input = File.read ARGV[0]
+    args = JSON.load input
+    
+    raise "'deps' arg must be a Hash" unless args['deps'].is_a? Hash
+    unless args['base_dir'].is_a? String
+      raise "'base_dir' arg must be a String"
+    end
+    
+    facts = {
+      'substring_deps_sorted' => Graph.new(
+        args['base_dir'],
+        args['deps']
+      ).tsort,
+    }
+    
+    print JSON.dump({
+      'changed' => changed,
+      'ansible_facts' => facts,
+    })
+    
+  rescue Exception => e
+    print JSON.dump({
+      'failed' => true,
+      'msg' => e.message,
+      # 'input' => input,
+      # 'args' => args,
+      # 'ARGV' => ARGV,
+      # 'ruby' => RUBY_VERSION,
+    })
+  end
+end
+
+main if __FILE__ == $0
