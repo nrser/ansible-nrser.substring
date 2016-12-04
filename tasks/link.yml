@@ -1,0 +1,19 @@
+---
+# link sub-packages in host
+
+- set_fact:
+    # path to the dep's lib directory
+    substring_link_lib_src: "{{ substring_link.value.dir }}/lib"
+    # path to the dep's lib directory in the parent's node_modules dir
+    substring_link_lib_dest: "{{ substring_target }}/node_modules/{{ substring_link.value.name }}/lib"
+
+- name: remove the link dest
+  file:
+    path: "{{ substring_link_lib_dest }}"
+    state: absent
+
+- name: symlink subpackage lib to node_modles lib
+  file:
+    src: "{{ substring_link_lib_src | relpath(substring_link_lib_dest | dirname) }}"
+    dest: "{{ substring_link_lib_dest }}"
+    state: link

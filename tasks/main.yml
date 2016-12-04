@@ -1,5 +1,7 @@
 ---
 - name: get sub-package names, versions and directories
+  tags:
+  - always
   vars.rb:
     bind:
       packages_dir: "{{ substring_packages_dir }}"
@@ -134,3 +136,10 @@
     {% endif %}
   args:
     chdir: "{{ substring_target }}"
+
+- include: link.yml
+  tags:
+  - link
+  with_dict: "{{ substring_packages }}"
+  loop_control:
+    loop_var: substring_link
