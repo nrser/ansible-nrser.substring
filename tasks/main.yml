@@ -35,23 +35,23 @@
   with_dict: "{{ substring_packages }}"
 
 - name: yarn install in each sub-package
-  command: >-
-    yarn install
-    
-    {% if substring_pure %}
-      --pure-lockfile
-    {% endif %}
-    
-    {% if substring_offline %}
-      --offline
-    {% endif %}
-  args:
+  stream:
+    cmd: >-
+      yarn install
+      
+      {% if substring_pure %}
+        --pure-lockfile
+      {% endif %}
+      
+      {% if substring_offline %}
+        --offline
+      {% endif %}
     chdir: "{{ item.value.dir }}"
   with_dict: "{{ substring_packages }}"
 
 - name: yarn run build in each sub-package
-  command: yarn run build
-  args:
+  stream:
+    cmd: yarn run build
     chdir: "{{ item.value.dir }}"
   with_dict: "{{ substring_packages }}"
   
@@ -64,9 +64,8 @@
 - name: npm pack sub-packages
   # we dont' use yarn because it includes the deps and we just want this 
   # package's code
-  command: >-
-    npm pack {{ item.value.dir }}
-  args:
+  stream:
+    cmd: "npm pack {{ item.value.dir }}"
     chdir: "{{ substring_packages_dir }}"
   with_dict: "{{ substring_packages }}"
 
@@ -129,12 +128,12 @@
     state: absent
 
 - name: yarn install in frontend
-  command: >-
-    yarn install
-    {% if substring_offline %}
-      --offline
-    {% endif %}
-  args:
+  stream:
+    cmd: >-
+      yarn install
+      {% if substring_offline %}
+        --offline
+      {% endif %}
     chdir: "{{ substring_target }}"
 
 - include: link.yml
